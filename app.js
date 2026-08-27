@@ -546,13 +546,21 @@ async function authSector(s, block) {
   if (authedSector === s) return true;
   const keyType = $('selKeyType').value;
   const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
+
+  await ensureCard();
+
   try {
     await mfAuth(1, block, parseKey(keyHex), currentUID);
     authedSector = s;
     return true;
-  } catch (_) {}
+  } catch (_) {
+    authedSector = -1;
+  }
+
+  logInfo(`Sector ${s}: stored key failed, trying ${UNIQUE_KEYS.length} known keys...`);
   for (const k of UNIQUE_KEYS) {
     try {
+      if (!cardPresent) await ensureCard();
       await mfAuth(1, block, parseKey(k), currentUID);
       if (keyType === 'A') sectorKeys[s].a = k;
       else sectorKeys[s].b = k;
@@ -560,8 +568,29 @@ async function authSector(s, block) {
       updateKeyStorage();
       logInfo(`Sector ${s}: found key ${keyType} = ${k}`);
       return true;
-    } catch (_) {}
+    } catch (e) {
+      authedSector = -1;
+      if (e.message === 'Timeout' || e.message === 'Card released') {
+        cardPresent = false;
+      }
+    }
   }
+  return false;
+}
+
+async function ensureCard() {
+  if (cardPresent && currentUID) return true;
+  try {
+    const card = await detectCard();
+    if (card) {
+      currentUID = card.uid;
+      currentATQA = card.atqa;
+      currentSAK = card.sak;
+      cardPresent = true;
+      updateCardInfo();
+      return true;
+    }
+  } catch (_) {}
   return false;
 }
 
@@ -1269,7 +1298,7 @@ async function doAuth() {
 }
 
 async function doReadBlock() {
-  if (!cardPresent || !currentUID) {
+  if (!(await ensureCard())) {
     toast('No card detected', false);
     return;
   }
@@ -1290,13 +1319,18 @@ async function doReadBlock() {
     updateValueDisplay(data);
     toast(`Block ${block} read`);
   } catch (e) {
+    authedSector = -1;
+    if (e.message === 'Timeout' || e.message === 'Card released') {
+      cardPresent = false;
+      await ensureCard();
+    }
     logErr('Read error: ' + e.message);
     toast('Read failed: ' + e.message, false);
   }
 }
 
 async function doWriteBlock() {
-  if (!cardPresent || !currentUID) {
+  if (!(await ensureCard())) {
     toast('No card detected', false);
     return;
   }
@@ -1325,6 +1359,11 @@ async function doWriteBlock() {
     dumpData[block] = data.slice(0, 16);
     toast(`Block ${block} written`);
   } catch (e) {
+    authedSector = -1;
+    if (e.message === 'Timeout' || e.message === 'Card released') {
+      cardPresent = false;
+      await ensureCard();
+    }
     logErr('Write error: ' + e.message);
     toast('Write failed: ' + e.message, false);
   }
@@ -1581,7 +1620,7 @@ function doLoadDump(event) {
 }
 
 async function doValueOp(op) {
-  if (!cardPresent || !currentUID) {
+  if (!(await ensureCard())) {
     toast('No card detected', false);
     return;
   }
@@ -1643,7 +1682,7 @@ async function doValueOp(op) {
 }
 
 async function doReadValue() {
-  if (!cardPresent || !currentUID) {
+  if (!(await ensureCard())) {
     toast('No card detected', false);
     return;
   }
