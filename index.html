@@ -92,14 +92,6 @@
               </button>
               <button
                 class="btn btn-outline btn-sm"
-                id="btnCloneRead"
-                onclick="doCloneRead()"
-                title="Read entire card into clone buffer for writing to another card"
-              >
-                Clone Read
-              </button>
-              <button
-                class="btn btn-outline btn-sm"
                 id="btnRelease"
                 onclick="doRelease()"
                 title="Send HALT command to release the card"
@@ -337,6 +329,7 @@
             <div class="btn-row">
               <button
                 class="btn btn-outline btn-sm"
+                id="btnCloneRead"
                 onclick="doCloneRead()"
                 title="Read all sectors/blocks from current card into memory buffer"
               >
@@ -344,6 +337,7 @@
               </button>
               <button
                 class="btn btn-outline btn-sm"
+                id="btnCloneWrite"
                 onclick="doCloneWrite()"
                 title="Write buffer contents to current card (skips manufacturer block 0)"
               >
@@ -351,6 +345,7 @@
               </button>
               <button
                 class="btn btn-outline btn-sm"
+                id="btnCloneClear"
                 onclick="doCloneClear()"
                 title="Clear the clone buffer from memory"
               >
