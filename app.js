@@ -581,13 +581,67 @@ function updateValueBlockCard(s, block) {
 function updateBlockInfo(s, b, block) {
   let desc = '';
   if (s === 0 && b === 0) {
-    desc = 'Manufacturer block (read-only)';
+    desc = 'Manufacturer block (read-only on standard cards)';
   } else if (isTrailerBlock(block)) {
     desc = 'Trailer (Key A + Access + Key B)';
   } else {
     desc = 'Data block';
   }
   $('blockInfo').textContent = `Block ${block} (S${s} B${b}) \u2014 ${desc}`;
+
+  const uidRow = $('uidEditRow');
+  if (block === 0) {
+    uidRow.classList.remove('hidden');
+    const data = dumpData[0];
+    if (data) {
+      const uid = data
+        .slice(0, 4)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')
+        .toUpperCase();
+      $('uidEdit').value = uid;
+    } else {
+      $('uidEdit').value = '';
+    }
+  } else {
+    uidRow.classList.add('hidden');
+  }
+}
+
+async function doWriteUid() {
+  if (!cardPresent || !currentUID) {
+    toast('No card detected', false);
+    return;
+  }
+  const uidHex = $('uidEdit').value.replace(/\s/g, '').toUpperCase();
+  if (uidHex.length !== 8 || !/^[0-9A-F]{8}$/.test(uidHex)) {
+    toast('UID must be 8 hex characters (4 bytes)', false);
+    return;
+  }
+
+  const uidBytes = [];
+  for (let i = 0; i < 8; i += 2) {
+    uidBytes.push(parseInt(uidHex.substr(i, 2), 16));
+  }
+
+  try {
+    const keyType = $('selKeyType').value;
+    const keyHex = keyType === 'B' ? sectorKeys[0].b : sectorKeys[0].a;
+    await mfAuth(1, 0, parseKey(keyHex), currentUID);
+
+    const existing = dumpData[0] || new Uint8Array(16);
+    const newBlock = new Uint8Array(16);
+    newBlock.set(uidBytes, 0);
+    newBlock.set(existing.slice(4), 4);
+
+    await mfWriteBlock(1, 0, newBlock);
+    dumpData[0] = newBlock;
+    updateDumpTable();
+    toast(`UID written: ${uidHex}`);
+  } catch (e) {
+    logErr('Write UID error: ' + e.message);
+    toast('Write UID failed: ' + e.message, false);
+  }
 }
 
 function updateAsciiPreview() {
@@ -602,6 +656,11 @@ function updateAsciiPreview() {
 
 function updateValueDisplay(data) {
   if (!data || data.length < 4) {
+    $('valueDisplay').textContent = '---';
+    return;
+  }
+  const allZero = data.every((b) => b === 0);
+  if (allZero) {
     $('valueDisplay').textContent = '---';
     return;
   }

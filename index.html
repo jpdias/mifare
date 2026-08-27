@@ -184,6 +184,26 @@
             <div class="block-info" id="blockInfo" title="Absolute block number and description">
               Block 0 (S0 B0) — Manufacturer block
             </div>
+            <div class="form-row hidden" id="uidEditRow">
+              <label title="4-byte UID stored in block 0 (bytes 0-3)">UID</label>
+              <input
+                type="text"
+                id="uidEdit"
+                value=""
+                maxlength="8"
+                spellcheck="false"
+                title="Editable UID (only works on magic/clonable cards)"
+                placeholder="e.g. AABBCCDD"
+              />
+              <button
+                class="btn btn-outline btn-sm"
+                id="btnWriteUid"
+                onclick="doWriteUid()"
+                title="Write new UID to block 0 (magic cards only)"
+              >
+                Write UID
+              </button>
+            </div>
             <div class="form-row">
               <label title="6-byte key for authentication (hex, 12 chars)">Key A</label>
               <input
