@@ -28,28 +28,42 @@
           <div class="card">
             <div class="card-title">Card Info</div>
             <div class="info-row">
-              <span class="info-label">Status</span>
+              <span class="info-label" title="Whether a card is currently in the RF field"
+                >Status</span
+              >
               <span class="info-value" id="cardStatus">No card</span>
             </div>
             <div class="info-row">
-              <span class="info-label">UID</span>
+              <span
+                class="info-label"
+                title="Unique Identifier — 4 or 7 bytes, from InListPassiveTarget response (ISO 14443A)"
+                >UID</span
+              >
               <span class="info-value" id="cardUID">---</span>
             </div>
             <div class="info-row">
-              <span class="info-label">Type</span>
+              <span class="info-label" title="Card type detected from SAK + ATQA values">Type</span>
               <span class="info-value" id="cardType">---</span>
             </div>
             <div class="info-row">
-              <span class="info-label">ATQA</span>
+              <span
+                class="info-label"
+                title="Answer To Request Type A — 2 bytes, identifies card family (e.g. 0044 = MIFARE Classic 1K)"
+                >ATQA</span
+              >
               <span class="info-value" id="cardATQA">---</span>
             </div>
             <div class="info-row">
-              <span class="info-label">SAK</span>
+              <span
+                class="info-label"
+                title="Select Acknowledge — 1 byte, identifies card subtype (0x08 = Classic 1K, 0x18 = Classic 4K, 0x09 = Mini)"
+                >SAK</span
+              >
               <span class="info-value" id="cardSAK">---</span>
             </div>
           </div>
 
-          <div class="card">
+          <div class="card card-disabled" id="actionsCard">
             <div class="card-title">Actions</div>
             <div class="btn-row">
               <button
@@ -158,7 +172,7 @@
 
         <!-- Column 2: Block Editor + Key Storage -->
         <div class="col">
-          <div class="card">
+          <div class="card card-disabled" id="blockEditorCard">
             <div class="card-title">Block Editor</div>
             <div class="form-row">
               <label title="Sector number (0-31 for 1K, 0-39 for 4K)">Sector</label>
@@ -291,9 +305,15 @@
               <table class="sector-table">
                 <thead>
                   <tr>
-                    <th title="Sector number">S</th>
-                    <th title="Block number within sector (0-3)">B</th>
-                    <th title="16 bytes of block data in hex">Data (hex)</th>
+                    <th title="Sector number (0-15 for 1K, 0-31 for 4K)">S</th>
+                    <th
+                      title="Block within sector (0-2 = data, 3 = trailer). R = manufacturer block (read-only), T = trailer (keys + access bits)"
+                    >
+                      B
+                    </th>
+                    <th title="16 bytes of block data in hex — click any row to load into editor">
+                      Data (hex)
+                    </th>
                   </tr>
                 </thead>
                 <tbody id="dumpBody"></tbody>
@@ -301,7 +321,7 @@
             </div>
           </div>
 
-          <div class="card">
+          <div class="card card-disabled" id="cloneCard">
             <div class="card-title">
               Clone
               <span
@@ -342,6 +362,11 @@
           <div class="card">
             <div class="card-title">
               Raw Log
+              <span
+                class="info-hint"
+                title="TX = data sent to PN532, RX = data received from PN532, ERR = errors"
+                >TX / RX / ERR</span
+              >
               <button
                 class="btn btn-outline btn-sm"
                 style="float: right; margin-top: -4px"

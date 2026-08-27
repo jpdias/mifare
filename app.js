@@ -498,6 +498,8 @@ function updateCardInfo() {
   [
     'btnDump',
     'btnCloneRead',
+    'btnCloneWrite',
+    'btnCloneClear',
     'btnRelease',
     'btnAuth',
     'btnReadBlock',
@@ -506,6 +508,14 @@ function updateCardInfo() {
   ].forEach((id) => {
     $(id).disabled = !enabled;
   });
+
+  ['actionsCard', 'blockEditorCard', 'cloneCard'].forEach((id) => {
+    $(id).classList.toggle('card-disabled', !enabled);
+  });
+
+  if (!enabled) {
+    $('valueBlockCard').classList.add('card-disabled');
+  }
 }
 
 function updateKeyStorage() {
