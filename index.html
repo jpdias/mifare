@@ -63,7 +63,7 @@
             </div>
           </div>
 
-          <div class="card card-disabled" id="actionsCard">
+          <div class="card" id="actionsCard">
             <div class="card-title">Actions</div>
             <div class="btn-row">
               <button
@@ -307,7 +307,7 @@
                   <tr>
                     <th title="Sector number (0-15 for 1K, 0-31 for 4K)">S</th>
                     <th
-                      title="Block within sector (0-2 = data, 3 = trailer). R = manufacturer block (read-only), T = trailer (keys + access bits)"
+                      title="Block within sector: 0-2 = data block. Suffixes: R = Reserved (manufacturer block 0, read-only), T = Trailer (block 3, holds Key A + access bits + Key B)"
                     >
                       B
                     </th>

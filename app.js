@@ -509,7 +509,7 @@ function updateCardInfo() {
     $(id).disabled = !enabled;
   });
 
-  ['actionsCard', 'blockEditorCard', 'cloneCard'].forEach((id) => {
+  ['blockEditorCard', 'cloneCard'].forEach((id) => {
     $(id).classList.toggle('card-disabled', !enabled);
   });
 
