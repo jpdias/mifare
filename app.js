@@ -1654,21 +1654,20 @@ async function doValueOp(op) {
 
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        if (attempt > 0) {
+          authedSector = -1;
+          await sleep(50 * attempt);
+          if (!(await authSector(s, block))) {
+            throw new Error('Auth failed on retry');
+          }
+        }
         await inDataExchange(1, cmd, 2000);
         await sleep(20);
         await inDataExchange(1, [0xb0, block], 2000);
         break;
       } catch (e) {
-        if (attempt < 2) {
-          logInfo(`Value op: ${e.message}, retry ${attempt + 2}/3`);
-          authedSector = -1;
-          await sleep(50 * (attempt + 1));
-          const keyType = $('selKeyType').value;
-          const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
-          await mfAuth(1, block, parseKey(keyHex), currentUID);
-        } else {
-          throw e;
-        }
+        if (attempt >= 2) throw e;
+        logInfo(`Value op: ${e.message}, retry ${attempt + 2}/3`);
       }
     }
 
