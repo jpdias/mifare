@@ -542,6 +542,29 @@ function checkAbort() {
   if (abortRequested) throw new Error('Cancelled');
 }
 
+async function authSector(s, block) {
+  if (authedSector === s) return true;
+  const keyType = $('selKeyType').value;
+  const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
+  try {
+    await mfAuth(1, block, parseKey(keyHex), currentUID);
+    authedSector = s;
+    return true;
+  } catch (_) {}
+  for (const k of UNIQUE_KEYS) {
+    try {
+      await mfAuth(1, block, parseKey(k), currentUID);
+      if (keyType === 'A') sectorKeys[s].a = k;
+      else sectorKeys[s].b = k;
+      authedSector = s;
+      updateKeyStorage();
+      logInfo(`Sector ${s}: found key ${keyType} = ${k}`);
+      return true;
+    } catch (_) {}
+  }
+  return false;
+}
+
 // ============================================================
 //  UI Helpers
 // ============================================================
@@ -1238,31 +1261,10 @@ async function doAuth() {
   }
   const s = parseInt($('selSector').value);
   const block = s * BLOCKS_PER_SECTOR;
-  const keyType = $('selKeyType').value;
-  const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
-
-  try {
-    const keyBytes = parseKey(keyHex);
-    await mfAuth(1, block, keyBytes, currentUID);
-    toast(`Authenticated sector ${s} with stored Key ${keyType}`);
-  } catch (e) {
-    logInfo(`Stored key failed, trying ${UNIQUE_KEYS.length} known keys...`);
-    let found = false;
-    for (const k of UNIQUE_KEYS) {
-      try {
-        await mfAuth(1, block, parseKey(k), currentUID);
-        if (keyType === 'A') sectorKeys[s].a = k;
-        else sectorKeys[s].b = k;
-        updateKeyStorage();
-        toast(`Authenticated sector ${s} with Key ${keyType} = ${k}`);
-        found = true;
-        break;
-      } catch (_) {}
-    }
-    if (!found) {
-      logErr('Auth error: all keys failed for sector ' + s);
-      toast('Auth failed — no working key found', false);
-    }
+  if (await authSector(s, block)) {
+    toast(`Authenticated sector ${s}`);
+  } else {
+    toast('Auth failed — no working key found', false);
   }
 }
 
@@ -1275,16 +1277,9 @@ async function doReadBlock() {
   const b = parseInt($('selBlock').value);
   const block = s * BLOCKS_PER_SECTOR + b;
 
-  if (authedSector !== s) {
-    const keyType = $('selKeyType').value;
-    const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
-    try {
-      await mfAuth(1, block, parseKey(keyHex), currentUID);
-      authedSector = s;
-    } catch (e) {
-      toast('Auth failed. Click Auth first.', false);
-      return;
-    }
+  if (!(await authSector(s, block))) {
+    toast('Auth failed', false);
+    return;
   }
 
   try {
@@ -1320,16 +1315,9 @@ async function doWriteBlock() {
     return;
   }
 
-  if (authedSector !== s) {
-    const keyType = $('selKeyType').value;
-    const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
-    try {
-      await mfAuth(1, block, parseKey(keyHex), currentUID);
-      authedSector = s;
-    } catch (e) {
-      toast('Auth failed. Click Auth first.', false);
-      return;
-    }
+  if (!(await authSector(s, block))) {
+    toast('Auth failed', false);
+    return;
   }
 
   try {
@@ -1601,16 +1589,9 @@ async function doValueOp(op) {
   const b = parseInt($('selBlock').value);
   const block = s * BLOCKS_PER_SECTOR + b;
 
-  if (authedSector !== s) {
-    const keyType = $('selKeyType').value;
-    const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
-    try {
-      await mfAuth(1, block, parseKey(keyHex), currentUID);
-      authedSector = s;
-    } catch (e) {
-      toast('Auth failed. Click Auth first.', false);
-      return;
-    }
+  if (!(await authSector(s, block))) {
+    toast('Auth failed for value op', false);
+    return;
   }
 
   const amount = parseInt($('valueAmount').value) || 0;
@@ -1639,8 +1620,8 @@ async function doValueOp(op) {
       } catch (e) {
         if (attempt < 2) {
           logInfo(`Value op: ${e.message}, retry ${attempt + 2}/3`);
-          await sleep(50 * (attempt + 1));
           authedSector = -1;
+          await sleep(50 * (attempt + 1));
           const keyType = $('selKeyType').value;
           const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
           await mfAuth(1, block, parseKey(keyHex), currentUID);
@@ -1670,16 +1651,9 @@ async function doReadValue() {
   const b = parseInt($('selBlock').value);
   const block = s * BLOCKS_PER_SECTOR + b;
 
-  if (authedSector !== s) {
-    const keyType = $('selKeyType').value;
-    const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
-    try {
-      await mfAuth(1, block, parseKey(keyHex), currentUID);
-      authedSector = s;
-    } catch (e) {
-      toast('Auth failed. Click Auth first.', false);
-      return;
-    }
+  if (!(await authSector(s, block))) {
+    toast('Auth failed', false);
+    return;
   }
 
   try {
