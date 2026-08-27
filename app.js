@@ -401,33 +401,135 @@ let sectorKeys = Array.from({ length: TOTAL_SECTORS_4K }, () => ({
 let dumpData = Array.from({ length: TOTAL_BLOCKS_4K }, () => new Uint8Array(BLOCK_SIZE));
 let scanning = false;
 let scanInterval = null;
-let busy = false;
+
+// State machine: disconnected | idle | scanning | card | busy
+let state = 'disconnected';
 let abortRequested = false;
 
-function setBusy(state) {
-  busy = state;
+const UI = {
+  disconnected: {
+    btnConnect: 0,
+    btnDisconnect: 1,
+    btnStop: 1,
+    btnScan: 1,
+    btnFindKeys: 1,
+    btnDump: 1,
+    btnCloneRead: 1,
+    btnCloneWrite: 1,
+    btnCloneClear: 0,
+    btnRelease: 1,
+    btnAuth: 1,
+    btnReadBlock: 1,
+    btnWriteBlock: 1,
+    btnWriteUid: 1,
+    actionsCard: 1,
+    blockEditorCard: 1,
+    cloneCard: 1,
+    valueBlockCard: 1,
+  },
+  idle: {
+    btnConnect: 1,
+    btnDisconnect: 0,
+    btnStop: 1,
+    btnScan: 0,
+    btnFindKeys: 1,
+    btnDump: 1,
+    btnCloneRead: 1,
+    btnCloneWrite: 1,
+    btnCloneClear: 0,
+    btnRelease: 1,
+    btnAuth: 1,
+    btnReadBlock: 1,
+    btnWriteBlock: 1,
+    btnWriteUid: 1,
+    actionsCard: 0,
+    blockEditorCard: 1,
+    cloneCard: 1,
+    valueBlockCard: 1,
+  },
+  scanning: {
+    btnConnect: 1,
+    btnDisconnect: 0,
+    btnStop: 0,
+    btnScan: 1,
+    btnFindKeys: 1,
+    btnDump: 1,
+    btnCloneRead: 1,
+    btnCloneWrite: 1,
+    btnCloneClear: 0,
+    btnRelease: 1,
+    btnAuth: 1,
+    btnReadBlock: 1,
+    btnWriteBlock: 1,
+    btnWriteUid: 1,
+    actionsCard: 0,
+    blockEditorCard: 1,
+    cloneCard: 1,
+    valueBlockCard: 1,
+  },
+  card: {
+    btnConnect: 1,
+    btnDisconnect: 0,
+    btnStop: 1,
+    btnScan: 0,
+    btnFindKeys: 0,
+    btnDump: 0,
+    btnCloneRead: 0,
+    btnCloneWrite: 0,
+    btnCloneClear: 0,
+    btnRelease: 0,
+    btnAuth: 0,
+    btnReadBlock: 0,
+    btnWriteBlock: 0,
+    btnWriteUid: 0,
+    actionsCard: 0,
+    blockEditorCard: 0,
+    cloneCard: 0,
+    valueBlockCard: 0,
+  },
+  busy: {
+    btnConnect: 1,
+    btnDisconnect: 1,
+    btnStop: 0,
+    btnScan: 1,
+    btnFindKeys: 1,
+    btnDump: 1,
+    btnCloneRead: 1,
+    btnCloneWrite: 1,
+    btnCloneClear: 1,
+    btnRelease: 1,
+    btnAuth: 1,
+    btnReadBlock: 1,
+    btnWriteBlock: 1,
+    btnWriteUid: 1,
+    actionsCard: 0,
+    blockEditorCard: 1,
+    cloneCard: 0,
+    valueBlockCard: 1,
+  },
+};
+
+function setState(newState, opts) {
+  state = newState;
   abortRequested = false;
-  const ids = [
-    'btnScan',
-    'btnFindKeys',
-    'btnDump',
-    'btnCloneRead',
-    'btnCloneWrite',
-    'btnCloneClear',
-    'btnRelease',
-    'btnAuth',
-    'btnReadBlock',
-    'btnWriteBlock',
-    'btnWriteUid',
-  ];
-  ids.forEach((id) => {
-    if ($(id)) $(id).disabled = state;
+  const defs = UI[newState];
+  if (!defs) return;
+  Object.entries(defs).forEach(([id, disabled]) => {
+    const el = $(id);
+    if (!el) return;
+    if (id.endsWith('Card')) {
+      el.classList.toggle('card-disabled', disabled);
+    } else {
+      el.disabled = !!disabled;
+    }
   });
-  const stopBtn = $('btnStop');
-  if (state) {
-    stopBtn.classList.remove('hidden');
-  } else {
-    stopBtn.classList.add('hidden');
+  $('btnStop').classList.toggle('hidden', newState !== 'busy');
+  if (opts?.btnText) {
+    const [id, text] = opts.btnText;
+    $(id).innerHTML = text;
+  }
+  if (opts?.cardDisabled) {
+    $('valueBlockCard').classList.toggle('card-disabled', !canDoValueOp(...opts.cardDisabled));
   }
 }
 
@@ -488,12 +590,15 @@ function clearLog() {
 function setConnected(c) {
   pn532.connected = c;
   $('statusDot').className = 'dot' + (c ? ' connected' : '');
-  $('btnConnect').classList.toggle('hidden', c);
-  $('btnDisconnect').classList.toggle('hidden', !c);
   if (!c) {
     cardPresent = false;
     currentUID = null;
+    currentATQA = null;
+    currentSAK = null;
+    setState('disconnected');
     updateCardInfo();
+  } else {
+    setState('idle');
   }
 }
 
@@ -527,27 +632,8 @@ function updateCardInfo() {
     cloneEl.className = 'hidden';
   }
 
-  const enabled = cardPresent;
-  [
-    'btnDump',
-    'btnCloneRead',
-    'btnCloneWrite',
-    'btnCloneClear',
-    'btnRelease',
-    'btnAuth',
-    'btnReadBlock',
-    'btnWriteBlock',
-    'btnFindKeys',
-  ].forEach((id) => {
-    $(id).disabled = !enabled;
-  });
-
-  ['blockEditorCard', 'cloneCard'].forEach((id) => {
-    $(id).classList.toggle('card-disabled', !enabled);
-  });
-
-  if (!enabled) {
-    $('valueBlockCard').classList.add('card-disabled');
+  if (state !== 'busy') {
+    setState(cardPresent ? 'card' : 'idle');
   }
 }
 
@@ -885,9 +971,19 @@ async function cleanupPort() {
 }
 
 function doStop() {
-  if (busy) {
+  if (state === 'busy') {
     abortRequested = true;
     logInfo('Stop requested...');
+  }
+  if (state === 'scanning') {
+    scanning = false;
+    if (scanInterval) {
+      clearInterval(scanInterval);
+      scanInterval = null;
+    }
+    $('btnScan').textContent = 'Scan Card';
+    setState('idle');
+    toast('Scan stopped');
   }
 }
 
@@ -981,14 +1077,30 @@ async function doScan() {
       scanInterval = null;
     }
     $('btnScan').textContent = 'Scan Card';
+    setState('idle');
     return;
   }
 
-  $('btnScan').textContent = 'Stop';
+  setState('scanning');
+  $('btnScan').innerHTML = '<span class="spinner"></span> Scanning...';
   scanning = true;
+
+  const startTime = Date.now();
+  const timeout = 15000;
 
   const poll = async () => {
     if (!scanning) return;
+    if (Date.now() - startTime > timeout) {
+      scanning = false;
+      if (scanInterval) {
+        clearInterval(scanInterval);
+        scanInterval = null;
+      }
+      $('btnScan').textContent = 'Scan Card';
+      setState('idle');
+      toast('Scan timed out — no card found', false);
+      return;
+    }
     try {
       const card = await detectCard();
       if (card) {
@@ -996,14 +1108,14 @@ async function doScan() {
         currentATQA = card.atqa;
         currentSAK = card.sak;
         cardPresent = true;
-        updateCardInfo();
-        toast('Card detected: ' + hexStrShort(card.uid));
         scanning = false;
         if (scanInterval) {
           clearInterval(scanInterval);
           scanInterval = null;
         }
         $('btnScan').textContent = 'Scan Card';
+        updateCardInfo();
+        toast('Card detected: ' + hexStrShort(card.uid));
       }
     } catch (e) {
       logErr('Scan error: ' + e.message);
@@ -1011,7 +1123,7 @@ async function doScan() {
   };
 
   await poll();
-  scanInterval = setInterval(poll, 500);
+  if (scanning) scanInterval = setInterval(poll, 500);
 }
 
 async function doFindKeys() {
@@ -1019,8 +1131,8 @@ async function doFindKeys() {
     toast('No card detected', false);
     return;
   }
-  if (busy) return;
-  setBusy(true);
+  if (state === 'busy') return;
+  setState('busy');
 
   const maxSector = currentSAK === 0x18 || currentSAK === 0x19 ? 32 : currentSAK === 0x09 ? 5 : 16;
 
@@ -1094,7 +1206,7 @@ async function doFindKeys() {
   } finally {
     $('btnFindKeys').textContent = 'Find Keys';
     updateKeyStorage();
-    setBusy(false);
+    setState('card');
   }
 }
 
@@ -1217,8 +1329,8 @@ async function doDump() {
     toast('No card detected', false);
     return;
   }
-  if (busy) return;
-  setBusy(true);
+  if (state === 'busy') return;
+  setState('busy');
   logInfo('Starting full dump...');
   $('btnDump').innerHTML = '<span class="spinner"></span> Dumping...';
 
@@ -1269,7 +1381,7 @@ async function doDump() {
   } finally {
     $('btnDump').textContent = 'Dump All';
     updateDumpTable();
-    setBusy(false);
+    setState('card');
   }
 }
 
@@ -1278,8 +1390,8 @@ async function doCloneRead() {
     toast('No card detected', false);
     return;
   }
-  if (busy) return;
-  setBusy(true);
+  if (state === 'busy') return;
+  setState('busy');
   logInfo('Clone: reading card...');
   $('btnCloneRead').innerHTML = '<span class="spinner"></span> Reading...';
 
@@ -1329,7 +1441,7 @@ async function doCloneRead() {
     }
   } finally {
     $('btnCloneRead').textContent = 'Read to Buffer';
-    setBusy(false);
+    setState('card');
   }
 }
 
@@ -1342,11 +1454,11 @@ async function doCloneWrite() {
     toast('No card detected', false);
     return;
   }
-  if (busy) return;
+  if (state === 'busy') return;
 
   if (!confirm(`This will write ${cloneBuffer.length} blocks to the card. Continue?`)) return;
 
-  setBusy(true);
+  setState('busy');
   logInfo('Clone: writing to card...');
   $('btnCloneWrite').innerHTML = '<span class="spinner"></span> Writing...';
 
@@ -1395,7 +1507,7 @@ async function doCloneWrite() {
     }
   } finally {
     $('btnCloneWrite').textContent = 'Write from Buffer';
-    setBusy(false);
+    setState('card');
   }
 }
 
