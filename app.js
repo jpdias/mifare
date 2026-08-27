@@ -401,6 +401,39 @@ let sectorKeys = Array.from({ length: TOTAL_SECTORS_4K }, () => ({
 let dumpData = Array.from({ length: TOTAL_BLOCKS_4K }, () => new Uint8Array(BLOCK_SIZE));
 let scanning = false;
 let scanInterval = null;
+let busy = false;
+let abortRequested = false;
+
+function setBusy(state) {
+  busy = state;
+  abortRequested = false;
+  const ids = [
+    'btnScan',
+    'btnFindKeys',
+    'btnDump',
+    'btnCloneRead',
+    'btnCloneWrite',
+    'btnCloneClear',
+    'btnRelease',
+    'btnAuth',
+    'btnReadBlock',
+    'btnWriteBlock',
+    'btnWriteUid',
+  ];
+  ids.forEach((id) => {
+    if ($(id)) $(id).disabled = state;
+  });
+  const stopBtn = $('btnStop');
+  if (state) {
+    stopBtn.classList.remove('hidden');
+  } else {
+    stopBtn.classList.add('hidden');
+  }
+}
+
+function checkAbort() {
+  if (abortRequested) throw new Error('Cancelled');
+}
 
 // ============================================================
 //  UI Helpers
@@ -851,6 +884,13 @@ async function cleanupPort() {
   } catch (_) {}
 }
 
+function doStop() {
+  if (busy) {
+    abortRequested = true;
+    logInfo('Stop requested...');
+  }
+}
+
 async function doDisconnect() {
   scanning = false;
   if (scanInterval) {
@@ -979,71 +1019,83 @@ async function doFindKeys() {
     toast('No card detected', false);
     return;
   }
+  if (busy) return;
+  setBusy(true);
 
   const maxSector = currentSAK === 0x18 || currentSAK === 0x19 ? 32 : currentSAK === 0x09 ? 5 : 16;
 
   logInfo(`Finding keys for ${maxSector} sectors (${UNIQUE_KEYS.length} keys to try)...`);
-  $('btnFindKeys').disabled = true;
   $('btnFindKeys').innerHTML = '<span class="spinner"></span> Finding...';
 
   let found = 0;
   const startTime = performance.now();
 
-  for (let s = 0; s < maxSector; s++) {
-    if (sectorKeys[s].a !== 'FFFFFFFFFFFF' || sectorKeys[s].b !== 'FFFFFFFFFFFF') {
-      logInfo(`Sector ${s}: already have keys (A=${sectorKeys[s].a} B=${sectorKeys[s].b})`);
-      found++;
-      continue;
-    }
+  try {
+    for (let s = 0; s < maxSector; s++) {
+      checkAbort();
+      if (sectorKeys[s].a !== 'FFFFFFFFFFFF' || sectorKeys[s].b !== 'FFFFFFFFFFFF') {
+        logInfo(`Sector ${s}: already have keys (A=${sectorKeys[s].a} B=${sectorKeys[s].b})`);
+        found++;
+        continue;
+      }
 
-    const trailer = trailerBlock(s);
-    let foundA = false,
-      foundB = false;
+      const trailer = trailerBlock(s);
+      let foundA = false,
+        foundB = false;
 
-    for (const keyHex of UNIQUE_KEYS) {
-      if (foundA && foundB) break;
+      for (const keyHex of UNIQUE_KEYS) {
+        checkAbort();
+        if (foundA && foundB) break;
 
-      const keyBytes = parseKey(keyHex);
+        const keyBytes = parseKey(keyHex);
 
-      if (!foundA) {
-        try {
-          await mfAuth(1, s * BLOCKS_PER_SECTOR, keyBytes, currentUID);
-          sectorKeys[s].a = keyHex;
-          foundA = true;
-          logInfo(`Sector ${s}: Key A = ${keyHex}`);
-          await sleep(10);
-        } catch (e) {
-          await sleep(5);
+        if (!foundA) {
+          try {
+            await mfAuth(1, s * BLOCKS_PER_SECTOR, keyBytes, currentUID);
+            sectorKeys[s].a = keyHex;
+            foundA = true;
+            logInfo(`Sector ${s}: Key A = ${keyHex}`);
+            await sleep(10);
+          } catch (e) {
+            await sleep(5);
+          }
+        }
+
+        if (!foundB) {
+          try {
+            const keyBBytes = parseKey(keyHex);
+            await inDataExchange(1, [0x61, trailer, ...keyBBytes, ...currentUID.slice(0, 4)], 2000);
+            sectorKeys[s].b = keyHex;
+            foundB = true;
+            logInfo(`Sector ${s}: Key B = ${keyHex}`);
+            await sleep(10);
+          } catch (e) {
+            await sleep(5);
+          }
         }
       }
 
-      if (!foundB) {
-        try {
-          const keyBBytes = parseKey(keyHex);
-          await inDataExchange(1, [0x61, trailer, ...keyBBytes, ...currentUID.slice(0, 4)], 2000);
-          sectorKeys[s].b = keyHex;
-          foundB = true;
-          logInfo(`Sector ${s}: Key B = ${keyHex}`);
-          await sleep(10);
-        } catch (e) {
-          await sleep(5);
-        }
+      if (foundA || foundB) found++;
+      if (!foundA && !foundB) {
+        logInfo(`Sector ${s}: no known keys found`);
       }
-    }
 
-    if (foundA || foundB) found++;
-    if (!foundA && !foundB) {
-      logInfo(`Sector ${s}: no known keys found`);
+      updateKeyStorage();
     }
-
+    const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+    toast(`Found keys in ${found}/${maxSector} sectors (${elapsed}s)`);
+  } catch (e) {
+    if (e.message === 'Cancelled') {
+      logInfo('Find keys cancelled');
+      toast('Find keys cancelled');
+    } else {
+      logErr('Find keys error: ' + e.message);
+    }
+  } finally {
+    $('btnFindKeys').textContent = 'Find Keys';
     updateKeyStorage();
+    setBusy(false);
   }
-
-  const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
-  $('btnFindKeys').disabled = false;
-  $('btnFindKeys').textContent = 'Find Keys';
-  updateKeyStorage();
-  toast(`Found keys in ${found}/${maxSector} sectors (${elapsed}s)`);
 }
 
 async function doRelease() {
@@ -1165,48 +1217,60 @@ async function doDump() {
     toast('No card detected', false);
     return;
   }
+  if (busy) return;
+  setBusy(true);
   logInfo('Starting full dump...');
-  $('btnDump').disabled = true;
-  $('btnDump').innerHTML = '<span class="spinner"></span>';
+  $('btnDump').innerHTML = '<span class="spinner"></span> Dumping...';
 
   let errors = 0;
-  for (let s = 0; s < getSectorCount(); s++) {
-    for (let b = 0; b < BLOCKS_PER_SECTOR; b++) {
-      const block = s * BLOCKS_PER_SECTOR + b;
-      let ok = false;
-      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
-        try {
-          if (b === 0) {
-            const keyType = $('selKeyType').value;
-            const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
-            await mfAuth(1, block, parseKey(keyHex), currentUID);
-            authedSector = s;
-            await sleep(10);
-          }
-          const data = await mfReadBlock(1, block);
-          dumpData[block] = data;
-          ok = true;
-        } catch (e) {
-          if (attempt < 2) {
-            logInfo(`Sector ${s} Block ${b}: ${e.message}, retry ${attempt + 2}/3`);
-            authedSector = -1;
-            await sleep(50 * (attempt + 1));
-          } else {
-            logErr(`Sector ${s} Block ${b}: ${e.message} after 3 attempts`);
-            errors++;
-            authedSector = -1;
+  try {
+    for (let s = 0; s < getSectorCount(); s++) {
+      for (let b = 0; b < BLOCKS_PER_SECTOR; b++) {
+        checkAbort();
+        const block = s * BLOCKS_PER_SECTOR + b;
+        let ok = false;
+        for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+          checkAbort();
+          try {
+            if (b === 0) {
+              const keyType = $('selKeyType').value;
+              const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
+              await mfAuth(1, block, parseKey(keyHex), currentUID);
+              authedSector = s;
+              await sleep(10);
+            }
+            const data = await mfReadBlock(1, block);
+            dumpData[block] = data;
+            ok = true;
+          } catch (e) {
+            if (attempt < 2) {
+              logInfo(`Sector ${s} Block ${b}: ${e.message}, retry ${attempt + 2}/3`);
+              authedSector = -1;
+              await sleep(50 * (attempt + 1));
+            } else {
+              logErr(`Sector ${s} Block ${b}: ${e.message} after 3 attempts`);
+              errors++;
+              authedSector = -1;
+            }
           }
         }
+        updateDumpTable();
+        await sleep(15);
       }
-      updateDumpTable();
-      await sleep(15);
     }
+    toast(`Dump complete (${errors} errors)`, errors === 0);
+  } catch (e) {
+    if (e.message === 'Cancelled') {
+      logInfo('Dump cancelled');
+      toast('Dump cancelled');
+    } else {
+      logErr('Dump error: ' + e.message);
+    }
+  } finally {
+    $('btnDump').textContent = 'Dump All';
+    updateDumpTable();
+    setBusy(false);
   }
-
-  $('btnDump').disabled = false;
-  $('btnDump').textContent = 'Dump All';
-  updateDumpTable();
-  toast(`Dump complete (${errors} errors)`, errors === 0);
 }
 
 async function doCloneRead() {
@@ -1214,16 +1278,20 @@ async function doCloneRead() {
     toast('No card detected', false);
     return;
   }
+  if (busy) return;
+  setBusy(true);
   logInfo('Clone: reading card...');
-  $('btnCloneRead').disabled = true;
+  $('btnCloneRead').innerHTML = '<span class="spinner"></span> Reading...';
 
   try {
     cloneBuffer = [];
     for (let s = 0; s < getSectorCount(); s++) {
       for (let b = 0; b < BLOCKS_PER_SECTOR; b++) {
+        checkAbort();
         const block = s * BLOCKS_PER_SECTOR + b;
         let data = null;
         for (let attempt = 0; attempt < 3 && !data; attempt++) {
+          checkAbort();
           try {
             if (b === 0) {
               const keyType = $('selKeyType').value;
@@ -1252,10 +1320,17 @@ async function doCloneRead() {
     $('cloneStatus').textContent = `${cloneBuffer.length} blocks (${hexStrShort(currentUID)})`;
     toast('Card data read to buffer');
   } catch (e) {
-    logErr('Clone read error: ' + e.message);
-    toast('Clone read failed: ' + e.message, false);
+    if (e.message === 'Cancelled') {
+      logInfo('Clone read cancelled');
+      toast('Clone read cancelled');
+    } else {
+      logErr('Clone read error: ' + e.message);
+      toast('Clone read failed: ' + e.message, false);
+    }
+  } finally {
+    $('btnCloneRead').textContent = 'Read to Buffer';
+    setBusy(false);
   }
-  $('btnCloneRead').disabled = false;
 }
 
 async function doCloneWrite() {
@@ -1267,43 +1342,61 @@ async function doCloneWrite() {
     toast('No card detected', false);
     return;
   }
+  if (busy) return;
 
   if (!confirm(`This will write ${cloneBuffer.length} blocks to the card. Continue?`)) return;
 
+  setBusy(true);
   logInfo('Clone: writing to card...');
+  $('btnCloneWrite').innerHTML = '<span class="spinner"></span> Writing...';
+
   let errors = 0;
-  for (let s = 0; s < getSectorCount(); s++) {
-    for (let b = 0; b < BLOCKS_PER_SECTOR; b++) {
-      const block = s * BLOCKS_PER_SECTOR + b;
-      if (isManufacturerBlock(block)) continue;
-      let ok = false;
-      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
-        try {
-          if (b === 0) {
-            const keyType = $('selKeyType').value;
-            const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
-            await mfAuth(1, block, parseKey(keyHex), currentUID);
-            authedSector = s;
-            await sleep(10);
-          }
-          await mfWriteBlock(1, block, cloneBuffer[block]);
-          ok = true;
-        } catch (e) {
-          if (attempt < 2) {
-            logInfo(`Clone write S${s}B${b}: ${e.message}, retry ${attempt + 2}/3`);
-            authedSector = -1;
-            await sleep(50 * (attempt + 1));
-          } else {
-            logErr(`Clone write S${s}B${b}: ${e.message} after 3 attempts`);
-            errors++;
-            authedSector = -1;
+  try {
+    for (let s = 0; s < getSectorCount(); s++) {
+      for (let b = 0; b < BLOCKS_PER_SECTOR; b++) {
+        checkAbort();
+        const block = s * BLOCKS_PER_SECTOR + b;
+        if (isManufacturerBlock(block)) continue;
+        let ok = false;
+        for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+          checkAbort();
+          try {
+            if (b === 0) {
+              const keyType = $('selKeyType').value;
+              const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
+              await mfAuth(1, block, parseKey(keyHex), currentUID);
+              authedSector = s;
+              await sleep(10);
+            }
+            await mfWriteBlock(1, block, cloneBuffer[block]);
+            ok = true;
+          } catch (e) {
+            if (attempt < 2) {
+              logInfo(`Clone write S${s}B${b}: ${e.message}, retry ${attempt + 2}/3`);
+              authedSector = -1;
+              await sleep(50 * (attempt + 1));
+            } else {
+              logErr(`Clone write S${s}B${b}: ${e.message} after 3 attempts`);
+              errors++;
+              authedSector = -1;
+            }
           }
         }
+        await sleep(15);
       }
-      await sleep(15);
     }
+    toast(`Clone write complete (${errors} errors)`, errors === 0);
+  } catch (e) {
+    if (e.message === 'Cancelled') {
+      logInfo('Clone write cancelled');
+      toast('Clone write cancelled');
+    } else {
+      logErr('Clone write error: ' + e.message);
+    }
+  } finally {
+    $('btnCloneWrite').textContent = 'Write from Buffer';
+    setBusy(false);
   }
-  toast(`Clone write complete (${errors} errors)`, errors === 0);
 }
 
 function doCloneClear() {
