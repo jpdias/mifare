@@ -426,6 +426,7 @@ const UI = {
     blockEditorCard: 1,
     cloneCard: 1,
     valueBlockCard: 1,
+    dumpCard: 1,
   },
   idle: {
     btnConnect: 1,
@@ -446,6 +447,7 @@ const UI = {
     blockEditorCard: 1,
     cloneCard: 1,
     valueBlockCard: 1,
+    dumpCard: 1,
   },
   scanning: {
     btnConnect: 1,
@@ -466,6 +468,7 @@ const UI = {
     blockEditorCard: 1,
     cloneCard: 1,
     valueBlockCard: 1,
+    dumpCard: 1,
   },
   card: {
     btnConnect: 1,
@@ -486,6 +489,7 @@ const UI = {
     blockEditorCard: 0,
     cloneCard: 0,
     valueBlockCard: 0,
+    dumpCard: 0,
   },
   busy: {
     btnConnect: 1,
@@ -506,6 +510,7 @@ const UI = {
     blockEditorCard: 1,
     cloneCard: 0,
     valueBlockCard: 1,
+    dumpCard: 0,
   },
 };
 
@@ -1517,6 +1522,61 @@ function doCloneClear() {
   cloneBufferSAK = null;
   $('cloneStatus').textContent = 'Empty';
   toast('Clone buffer cleared');
+}
+
+function doSaveDump() {
+  const sectorCount = getSectorCount();
+  const totalBytes = sectorCount * BLOCKS_PER_SECTOR * BLOCK_SIZE;
+  const buf = new Uint8Array(totalBytes);
+  for (let s = 0; s < sectorCount; s++) {
+    for (let b = 0; b < BLOCKS_PER_SECTOR; b++) {
+      const block = s * BLOCKS_PER_SECTOR + b;
+      buf.set(dumpData[block], block * BLOCK_SIZE);
+    }
+  }
+  const blob = new Blob([buf], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `dump_${hexStrShort(currentUID || [0])}_${sectorCount}k.mfd`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`Dump saved (${totalBytes} bytes)`);
+}
+
+function doLoadDump(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const data = new Uint8Array(reader.result);
+    const blockSize = 16;
+    const blocksPerSector = 4;
+    const loadedSectors = Math.floor(data.length / (blocksPerSector * blockSize));
+
+    for (let s = 0; s < loadedSectors && s < TOTAL_SECTORS_4K; s++) {
+      for (let b = 0; b < blocksPerSector; b++) {
+        const block = s * blocksPerSector + b;
+        const offset = block * blockSize;
+        if (offset + blockSize <= data.length) {
+          dumpData[block] = data.slice(offset, offset + blockSize);
+        }
+      }
+    }
+
+    const totalBlocks = Math.min(Math.floor(data.length / blockSize), TOTAL_BLOCKS_4K);
+    updateDumpTable();
+    updateBlockInfo(parseInt($('selSector').value), parseInt($('selBlock').value), 0);
+
+    if (totalBlocks >= 64) {
+      $('selSector').value = 0;
+      onSectorChange();
+    }
+
+    toast(`Loaded ${data.length} bytes (${loadedSectors} sectors) from ${file.name}`);
+  };
+  reader.readAsArrayBuffer(file);
+  event.target.value = '';
 }
 
 async function doValueOp(op) {

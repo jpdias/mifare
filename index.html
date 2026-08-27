@@ -314,12 +314,37 @@
 
         <!-- Column 3: Sector Dump + Clone + Log -->
         <div class="col">
-          <div class="card">
+          <div class="card card-disabled" id="dumpCard">
             <div class="card-title">
               Sector Dump
               <span class="info-hint" title="Click any row to load that block into the editor"
                 >click row to load</span
               >
+            </div>
+            <div class="btn-row" style="margin-bottom: 0.5rem">
+              <button
+                class="btn btn-outline btn-sm"
+                id="btnSaveDump"
+                onclick="doSaveDump()"
+                title="Save dump to a .mfd file"
+              >
+                Save Dump
+              </button>
+              <button
+                class="btn btn-outline btn-sm"
+                id="btnLoadDump"
+                onclick="$('dumpFileInput').click()"
+                title="Load dump from a .mfd/.bin file"
+              >
+                Load Dump
+              </button>
+              <input
+                type="file"
+                id="dumpFileInput"
+                accept=".mfd,.bin,.hex"
+                style="display: none"
+                onchange="doLoadDump(event)"
+              />
             </div>
             <div class="dump-scroll" id="dumpContainer">
               <table class="sector-table">
