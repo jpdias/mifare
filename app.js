@@ -587,11 +587,21 @@ async function ensureCard() {
       currentATQA = card.atqa;
       currentSAK = card.sak;
       cardPresent = true;
+      authedSector = -1;
       updateCardInfo();
       return true;
     }
   } catch (_) {}
   return false;
+}
+
+function resetCard() {
+  cardPresent = false;
+  authedSector = -1;
+  currentUID = null;
+  currentATQA = null;
+  currentSAK = null;
+  updateCardInfo();
 }
 
 // ============================================================
@@ -1284,7 +1294,7 @@ async function doRelease() {
 }
 
 async function doAuth() {
-  if (!cardPresent || !currentUID) {
+  if (!(await ensureCard())) {
     toast('No card detected', false);
     return;
   }
@@ -1319,13 +1329,9 @@ async function doReadBlock() {
     updateValueDisplay(data);
     toast(`Block ${block} read`);
   } catch (e) {
-    authedSector = -1;
-    if (e.message === 'Timeout' || e.message === 'Card released') {
-      cardPresent = false;
-      await ensureCard();
-    }
     logErr('Read error: ' + e.message);
     toast('Read failed: ' + e.message, false);
+    resetCard();
   }
 }
 
@@ -1359,13 +1365,9 @@ async function doWriteBlock() {
     dumpData[block] = data.slice(0, 16);
     toast(`Block ${block} written`);
   } catch (e) {
-    authedSector = -1;
-    if (e.message === 'Timeout' || e.message === 'Card released') {
-      cardPresent = false;
-      await ensureCard();
-    }
     logErr('Write error: ' + e.message);
     toast('Write failed: ' + e.message, false);
+    resetCard();
   }
 }
 
@@ -1678,6 +1680,7 @@ async function doValueOp(op) {
   } catch (e) {
     logErr('Value op error: ' + e.message);
     toast(op + ' failed: ' + e.message, false);
+    resetCard();
   }
 }
 
@@ -1703,6 +1706,7 @@ async function doReadValue() {
     updateValueDisplay(data);
   } catch (e) {
     toast('Read failed: ' + e.message, false);
+    resetCard();
   }
 }
 
