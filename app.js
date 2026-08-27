@@ -581,7 +581,7 @@ function updateValueBlockCard(s, block) {
 function updateBlockInfo(s, b, block) {
   let desc = '';
   if (s === 0 && b === 0) {
-    desc = 'Manufacturer block (read-only on standard cards)';
+    desc = 'Manufacturer block (read-only, except on magic cards)';
   } else if (isTrailerBlock(block)) {
     desc = 'Trailer (Key A + Access + Key B)';
   } else {
@@ -639,8 +639,13 @@ async function doWriteUid() {
     updateDumpTable();
     toast(`UID written: ${uidHex}`);
   } catch (e) {
-    logErr('Write UID error: ' + e.message);
-    toast('Write UID failed: ' + e.message, false);
+    if (e.message === 'Timeout') {
+      toast('Block 0 write failed — card is not a magic/clonable card', false);
+      logErr('Write UID: standard MIFARE Classic block 0 is read-only');
+    } else {
+      logErr('Write UID error: ' + e.message);
+      toast('Write UID failed: ' + e.message, false);
+    }
   }
 }
 
