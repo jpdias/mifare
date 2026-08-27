@@ -1240,16 +1240,29 @@ async function doAuth() {
   const block = s * BLOCKS_PER_SECTOR;
   const keyType = $('selKeyType').value;
   const keyHex = keyType === 'B' ? sectorKeys[s].b : sectorKeys[s].a;
+
   try {
     const keyBytes = parseKey(keyHex);
     await mfAuth(1, block, keyBytes, currentUID);
-    if (keyType === 'A') sectorKeys[s].a = keyHex.toUpperCase();
-    else sectorKeys[s].b = keyHex.toUpperCase();
-    updateKeyStorage();
-    toast(`Authenticated sector ${s} with Key ${keyType}`);
+    toast(`Authenticated sector ${s} with stored Key ${keyType}`);
   } catch (e) {
-    logErr('Auth error: ' + e.message);
-    toast('Auth failed: ' + e.message, false);
+    logInfo(`Stored key failed, trying ${UNIQUE_KEYS.length} known keys...`);
+    let found = false;
+    for (const k of UNIQUE_KEYS) {
+      try {
+        await mfAuth(1, block, parseKey(k), currentUID);
+        if (keyType === 'A') sectorKeys[s].a = k;
+        else sectorKeys[s].b = k;
+        updateKeyStorage();
+        toast(`Authenticated sector ${s} with Key ${keyType} = ${k}`);
+        found = true;
+        break;
+      } catch (_) {}
+    }
+    if (!found) {
+      logErr('Auth error: all keys failed for sector ' + s);
+      toast('Auth failed — no working key found', false);
+    }
   }
 }
 
