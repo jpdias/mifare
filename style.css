@@ -211,6 +211,12 @@ hr {
   padding-bottom: 0.5rem;
 }
 
+.card-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* Info rows */
 .info-row {
   display: flex;

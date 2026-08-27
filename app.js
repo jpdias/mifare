@@ -550,6 +550,22 @@ function onBlockChange() {
   updateAsciiPreview();
   updateValueDisplay(data);
   updateBlockInfo(s, b, block);
+  updateValueBlockCard(s, block);
+}
+
+function canDoValueOp(s, block) {
+  if (s === 0 && block === 0) return false;
+  if (isTrailerBlock(block)) return false;
+  return true;
+}
+
+function updateValueBlockCard(s, block) {
+  const card = $('valueBlockCard');
+  if (canDoValueOp(s, block)) {
+    card.classList.remove('card-disabled');
+  } else {
+    card.classList.add('card-disabled');
+  }
 }
 
 function updateBlockInfo(s, b, block) {
